@@ -100,45 +100,31 @@ class FoodManager:
                 conn.close()
     
     def get_food_item(self, food_id):
-        """获取指定ID的美食记录详情"""
+        """根据ID获取单个美食项"""
         conn = None
         try:
             conn = self.get_connection()
-            conn.row_factory = sqlite3.Row
+            conn.row_factory = sqlite3.Row  # 使查询结果可以通过列名访问
             cursor = conn.cursor()
             
-            cursor.execute("""
-                SELECT id, name, city, rating, reason, address, 
-                       latitude, longitude, created_at
-                FROM food_items
-                WHERE id = ?
-            """, (food_id,))
-            
+            # 查询美食记录
+            cursor.execute("SELECT * FROM food_items WHERE id = ?", (food_id,))
             row = cursor.fetchone()
-            if not row:
-                return None
+            
+            if row:
+                food_item = dict(row)
                 
-            food_item = dict(row)
+                # 查询照片
+                cursor.execute("SELECT id FROM food_photos WHERE food_id = ?", (food_id,))
+                photo_ids = [row[0] for row in cursor.fetchall()]
+                food_item["photo_ids"] = photo_ids
+                
+                return food_item
             
-            # 获取照片数据
-            cursor.execute("""
-                SELECT id, photo_data FROM food_photos
-                WHERE food_id = ?
-            """, (food_id,))
-            
-            photos = []
-            for photo_row in cursor.fetchall():
-                photos.append({
-                    "id": photo_row[0],
-                    "data": photo_row[1]
-                })
-            
-            food_item["photos"] = photos
-            
-            return food_item
+            return None
         
         except Exception as e:
-            print(f"Error getting food item {food_id}: {e}")
+            print(f"Error getting food item: {e}")
             return None
         
         finally:
@@ -171,23 +157,20 @@ class FoodManager:
                 conn.close()
     
     def delete_food_item(self, food_id):
-        """删除指定ID的美食记录"""
+        """删除美食记录"""
         conn = None
         try:
             conn = self.get_connection()
             cursor = conn.cursor()
             
-            # 删除美食记录（照片会通过外键约束自动删除）
-            cursor.execute("""
-                DELETE FROM food_items
-                WHERE id = ?
-            """, (food_id,))
+            # 删除美食记录（由于外键约束，相关的照片会自动删除）
+            cursor.execute("DELETE FROM food_items WHERE id = ?", (food_id,))
             
             conn.commit()
-            return cursor.rowcount > 0
+            return True
         
         except Exception as e:
-            print(f"Error deleting food item {food_id}: {e}")
+            print(f"Error deleting food item: {e}")
             if conn:
                 conn.rollback()
             return False
@@ -197,7 +180,7 @@ class FoodManager:
                 conn.close()
     
     def update_food_item(self, food_id, food_data):
-        """更新指定ID的美食记录"""
+        """更新美食记录"""
         conn = None
         try:
             conn = self.get_connection()
@@ -205,8 +188,8 @@ class FoodManager:
             
             # 更新美食记录
             cursor.execute("""
-                UPDATE food_items
-                SET name = ?, city = ?, rating = ?, reason = ?,
+                UPDATE food_items 
+                SET name = ?, city = ?, rating = ?, reason = ?, 
                     address = ?, latitude = ?, longitude = ?
                 WHERE id = ?
             """, (
@@ -220,8 +203,12 @@ class FoodManager:
                 food_id
             ))
             
-            # 如果有新照片，添加它们
+            # 如果有新照片，添加照片
             if "photos" in food_data and food_data["photos"]:
+                # 可选：先删除旧照片
+                # cursor.execute("DELETE FROM food_photos WHERE food_id = ?", (food_id,))
+                
+                # 添加新照片
                 for photo_data in food_data["photos"]:
                     cursor.execute("""
                         INSERT INTO food_photos (food_id, photo_data)
@@ -232,7 +219,7 @@ class FoodManager:
             return True
         
         except Exception as e:
-            print(f"Error updating food item {food_id}: {e}")
+            print(f"Error updating food item: {e}")
             if conn:
                 conn.rollback()
             return False
@@ -363,4 +350,36 @@ class FoodManager:
         
         finally:
             if conn:
-                conn.close() 
+                conn.close()
+    
+    def get_user_food_items(self):
+        """获取用户自己的美食数据（非导入的）"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM food_items WHERE is_imported = 0 OR is_imported IS NULL"
+        cursor.execute(query)
+        
+        items = []
+        for row in cursor.fetchall():
+            item = dict(row)
+            items.append(item)
+        
+        conn.close()
+        return items
+    
+    def get_imported_food_items(self):
+        """获取导入的美食数据"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM food_items WHERE is_imported = 1"
+        cursor.execute(query)
+        
+        items = []
+        for row in cursor.fetchall():
+            item = dict(row)
+            items.append(item)
+        
+        conn.close()
+        return items 

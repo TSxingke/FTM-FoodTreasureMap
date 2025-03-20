@@ -1,11 +1,15 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QHBoxLayout, 
-                            QScrollArea, QGridLayout)
-from PyQt5.QtCore import Qt, QSize, QBuffer
-from PyQt5.QtGui import QPixmap, QImage, QFont
+                            QScrollArea, QGridLayout, QPushButton)
+from PyQt5.QtCore import Qt, QSize, QBuffer, pyqtSignal
+from PyQt5.QtGui import QPixmap, QImage, QFont, QIcon
 from data.food_manager import FoodManager
 from io import BytesIO
 
 class FoodDetailWidget(QWidget):
+    # 添加信号
+    delete_requested = pyqtSignal(int)  # 传递美食ID
+    edit_requested = pyqtSignal(int)    # 传递美食ID
+    
     def __init__(self):
         super().__init__()
         
@@ -15,41 +19,62 @@ class FoodDetailWidget(QWidget):
         self.setup_ui()
     
     def setup_ui(self):
-        layout = QVBoxLayout()
-        
-        # 创建滚动区域
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        
-        # 创建内容部件
-        content_widget = QWidget()
-        self.content_layout = QVBoxLayout(content_widget)
+        main_layout = QVBoxLayout()
         
         # 标题
-        self.title_label = QLabel("请选择一个美食点")
-        self.title_label.setAlignment(Qt.AlignCenter)
-        self.title_label.setFont(QFont("Arial", 14, QFont.Bold))
-        self.content_layout.addWidget(self.title_label)
+        self.title_label = QLabel("请选择美食项")
+        self.title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
+        main_layout.addWidget(self.title_label)
         
-        # 基本信息
-        self.info_layout = QGridLayout()
-        self.content_layout.addLayout(self.info_layout)
+        # 操作按钮区域
+        action_layout = QHBoxLayout()
+        
+        # 编辑按钮
+        self.edit_button = QPushButton("编辑")
+        self.edit_button.setIcon(QIcon("icons/edit.png"))
+        self.edit_button.clicked.connect(self.request_edit)
+        action_layout.addWidget(self.edit_button)
+        
+        # 删除按钮
+        self.delete_button = QPushButton("删除")
+        self.delete_button.setIcon(QIcon("icons/delete.png"))
+        self.delete_button.clicked.connect(self.request_delete)
+        action_layout.addWidget(self.delete_button)
+        
+        action_layout.addStretch()
+        main_layout.addLayout(action_layout)
+        
+        # 信息区域
+        info_scroll = QScrollArea()
+        info_scroll.setWidgetResizable(True)
+        info_widget = QWidget()
+        info_scroll.setWidget(info_widget)
+        
+        info_layout = QVBoxLayout(info_widget)
+        
+        # 基本信息区
+        basic_info_widget = QWidget()
+        self.info_layout = QGridLayout(basic_info_widget)
+        info_layout.addWidget(basic_info_widget)
         
         # 推荐理由
         self.reason_label = QLabel()
         self.reason_label.setWordWrap(True)
-        self.reason_label.setTextFormat(Qt.RichText)
-        self.content_layout.addWidget(self.reason_label)
+        info_layout.addWidget(self.reason_label)
         
         # 照片区域
-        self.photos_layout = QHBoxLayout()
-        self.content_layout.addLayout(self.photos_layout)
+        photos_widget = QWidget()
+        self.photos_layout = QHBoxLayout(photos_widget)
+        info_layout.addWidget(photos_widget)
         
-        # 设置滚动区域的部件
-        scroll_area.setWidget(content_widget)
-        layout.addWidget(scroll_area)
+        info_layout.addStretch()
         
-        self.setLayout(layout)
+        main_layout.addWidget(info_scroll)
+        self.setLayout(main_layout)
+        
+        # 初始时禁用按钮
+        self.edit_button.setEnabled(False)
+        self.delete_button.setEnabled(False)
     
     def display_food_details(self, food_item):
         """显示美食详情"""
@@ -85,9 +110,13 @@ class FoodDetailWidget(QWidget):
         
         # 加载照片
         self.load_photos(food_item["id"], food_item.get("photo_ids", []))
+        
+        # 启用按钮
+        self.edit_button.setEnabled(True)
+        self.delete_button.setEnabled(True)
     
     def load_photos(self, food_id, photo_ids):
-        """加载美食照片"""
+        """加载照片"""
         if not photo_ids:
             self.photos_layout.addWidget(QLabel("暂无照片"))
             return
@@ -119,15 +148,34 @@ class FoodDetailWidget(QWidget):
         self.photos_layout.addStretch()
     
     def clear_layout(self, layout):
-        """清除布局中的所有部件"""
-        if layout is None:
-            return
-            
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            
-            if widget:
-                widget.deleteLater()
-            elif item.layout():
-                self.clear_layout(item.layout()) 
+        """清除布局中的所有控件"""
+        if layout is not None:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+                else:
+                    self.clear_layout(item.layout())
+    
+    def request_edit(self):
+        """请求编辑当前美食项"""
+        if self.current_food_id is not None:
+            self.edit_requested.emit(self.current_food_id)
+    
+    def request_delete(self):
+        """请求删除当前美食项"""
+        if self.current_food_id is not None:
+            self.delete_requested.emit(self.current_food_id)
+    
+    def clear_details(self):
+        """清除详情显示"""
+        self.current_food_id = None
+        self.title_label.setText("请选择美食项")
+        self.clear_layout(self.info_layout)
+        self.clear_layout(self.photos_layout)
+        self.reason_label.hide()
+        
+        # 禁用按钮
+        self.edit_button.setEnabled(False)
+        self.delete_button.setEnabled(False) 

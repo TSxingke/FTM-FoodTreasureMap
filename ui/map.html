@@ -12,7 +12,11 @@
                     padding: 0;
                 }
             </style>
-            <script type="text/javascript" src="https://api.map.baidu.com/api?type=webgl&v=1.0&ak=OBUkmzeyCj9vCfell3YPGqKGN47Sj9LJ"></script>
+            <script>
+                window.HOST_TYPE = '2';
+                window.BMapGL_loadScriptTime = (new Date).getTime();
+            </script>
+            <script type="text/javascript" src="https://api.map.baidu.com/getscript?type=webgl&v=1.0&ak=OBUkmzeyCj9vCfell3YPGqKGN47Sj9LJ&services=&t=20250313124310"></script>
         </head>
         <body>
             <div id="map-container"></div>
@@ -35,15 +39,10 @@
                     // 添加控件
                     map.addControl(new BMapGL.NavigationControl());
                     map.addControl(new BMapGL.ScaleControl());
-                    
-                    // 添加测试标记
-                    setTimeout(function() {
-                        addFoodMarker(116.404, 39.915, "测试点", 8, 0);
-                    }, 1000);
                 }
                 
                 // 添加食物标记
-                function addFoodMarker(lng, lat, name, rating, id) {
+                function addFoodMarker(lng, lat, name, rating, id, address, reason, city) {
                     var point = new BMapGL.Point(lng, lat);
                     
                     // 根据评分设置颜色
@@ -53,9 +52,64 @@
                     var marker = new BMapGL.Marker(point);
                     marker.setTitle(name);
                     
+                    // 存储美食点数据
+                    marker.foodData = {
+                        id: id,
+                        name: name,
+                        rating: rating,
+                        address: address,
+                        reason: reason || "暂无推荐理由",
+                        city: city
+                    };
+                    
                     // 添加点击事件
                     marker.addEventListener("click", function() {
-                        alert("点击了: " + name + " (评分: " + rating + ")");
+                        // 关闭之前的信息窗口
+                        if (map.infoWindow) {
+                            map.closeInfoWindow();
+                        }
+                        
+                        // 创建信息卡片内容
+                        var content = `
+                            <div style="background-color: rgba(255, 255, 255, 0.8); 
+                                        padding: 15px; 
+                                        border-radius: 8px; 
+                                        max-width: 300px;
+                                        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);">
+                                <h3 style="margin-top: 0; color: ${color};">${name}</h3>
+                                <div style="margin-bottom: 8px;">
+                                    <span style="font-weight: bold;">评分: </span>
+                                    <span>${rating} / 10</span>
+                                </div>
+                                <div style="margin-bottom: 8px;">
+                                    <span style="font-weight: bold;">地址: </span>
+                                    <span>${address}</span>
+                                </div>
+                                <div style="margin-bottom: 8px;">
+                                    <span style="font-weight: bold;">城市: </span>
+                                    <span>${city}</span>
+                                </div>
+                                <div>
+                                    <span style="font-weight: bold;">推荐理由: </span>
+                                    <div style="margin-top: 5px;">${reason}</div>
+                                </div>
+                            </div>
+                        `;
+                        
+                        // 创建并打开信息窗口
+                        var infoWindow = new BMapGL.InfoWindow(content, {
+                            width: 320,
+                            height: 200,
+                            title: "",
+                            enableMessage: false,
+                            enableCloseOnClick: true
+                        });
+                        
+                        map.infoWindow = infoWindow;
+                        marker.openInfoWindow(infoWindow, point);
+                        
+                        // 通知Python应用高亮显示此美食点
+                        window.pywebview.api.highlightFoodItem(id);
                     });
                     
                     // 添加到地图

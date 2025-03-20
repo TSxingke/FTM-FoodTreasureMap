@@ -10,17 +10,26 @@ from PIL import Image
 from io import BytesIO
 
 class AddFoodDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, editing=False, food_data=None, api_key=None):
         super().__init__(parent)
         
-        self.api_key = "IwROZMfGJmOcfruwdxtDtEAPFtyQPJp3"
-        self.photo_paths = []
-        self.location_data = None
+        self.editing = editing
+        self.food_data = food_data
+        self.api_key = api_key or "IwROZMfGJmOcfruwdxtDtEAPFtyQPJp3"  # 使用检索专用的AK
         
-        self.setWindowTitle("添加美食记录")
-        self.setMinimumWidth(500)
+        self.photos = []
+        self.location_data = {"latitude": 0, "longitude": 0, "address": ""}
+        
+        if editing and food_data:
+            self.setWindowTitle("编辑美食记录")
+        else:
+            self.setWindowTitle("添加美食记录")
         
         self.setup_ui()
+        
+        # 如果是编辑模式，填充已有数据
+        if editing and food_data:
+            self.populate_data(food_data)
     
     def setup_ui(self):
         layout = QVBoxLayout()
@@ -28,9 +37,16 @@ class AddFoodDialog(QDialog):
         # 创建表单布局
         form_layout = QFormLayout()
         
-        # 店铺名称
+        # 店铺名称和查询按钮
+        name_layout = QHBoxLayout()
         self.name_edit = QLineEdit()
-        form_layout.addRow("店铺名称:", self.name_edit)
+        name_layout.addWidget(self.name_edit)
+        
+        self.search_btn = QPushButton("查找")
+        self.search_btn.clicked.connect(self.query_location)
+        name_layout.addWidget(self.search_btn)
+        
+        form_layout.addRow("店铺名称:", name_layout)
         
         # 所在城市
         self.city_combo = QComboBox()
@@ -42,6 +58,10 @@ class AddFoodDialog(QDialog):
         self.rating_spin.setRange(1, 10)
         self.rating_spin.setValue(8)
         form_layout.addRow("评价等级:", self.rating_spin)
+        
+        # 位置信息
+        self.location_label = QLabel("位置: 尚未查询")
+        form_layout.addRow("地址信息:", self.location_label)
         
         # 推荐理由
         self.reason_edit = QTextEdit()
@@ -74,17 +94,6 @@ class AddFoodDialog(QDialog):
         photo_layout.addLayout(photo_btn_layout)
         layout.addLayout(photo_layout)
         
-        # 位置查询区域
-        location_layout = QHBoxLayout()
-        self.location_label = QLabel("位置: 尚未查询")
-        location_layout.addWidget(self.location_label)
-        
-        self.query_location_btn = QPushButton("查询位置")
-        self.query_location_btn.clicked.connect(self.query_location)
-        location_layout.addWidget(self.query_location_btn)
-        
-        layout.addLayout(location_layout)
-        
         # 对话框按钮
         btn_layout = QHBoxLayout()
         self.cancel_btn = QPushButton("取消")
@@ -100,32 +109,69 @@ class AddFoodDialog(QDialog):
         
         self.setLayout(layout)
     
+    def populate_data(self, food_data):
+        """填充现有的美食数据"""
+        # 设置基本信息
+        self.name_edit.setText(food_data.get("name", ""))
+        
+        # 设置城市
+        city_index = self.city_combo.findText(food_data.get("city", ""))
+        if city_index >= 0:
+            self.city_combo.setCurrentIndex(city_index)
+        
+        # 设置评分
+        self.rating_spin.setValue(food_data.get("rating", 5))
+        
+        # 设置地址和位置信息
+        address = food_data.get("address", "未知地址")
+        latitude = food_data.get("latitude", 0)
+        longitude = food_data.get("longitude", 0)
+        
+        # 存储位置数据
+        self.location_data = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "address": address
+        }
+        
+        # 更新位置标签
+        self.location_label.setText(f"位置: {address} ({latitude}, {longitude})")
+        
+        # 设置推荐理由
+        self.reason_edit.setPlainText(food_data.get("reason", ""))
+        
+        # 启用保存按钮，因为已经有位置信息
+        self.save_btn.setEnabled(True)
+        
+        # 加载已有照片
+        # 这部分暂时保留为空，因为照片数据可能比较复杂，需要单独处理
+    
     def add_photo(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
             self, "选择照片", "", "图片文件 (*.jpg *.jpeg *.png)"
         )
         
         if file_paths:
-            self.photo_paths.extend(file_paths)
+            self.photos.extend(file_paths)
             self.update_photo_preview()
     
     def clear_photos(self):
-        self.photo_paths = []
+        self.photos = []
         self.photo_preview.setText("尚未上传照片")
         self.photo_preview.setPixmap(QPixmap())
     
     def update_photo_preview(self):
-        if not self.photo_paths:
+        if not self.photos:
             return
             
         # 显示第一张照片的预览
-        pixmap = QPixmap(self.photo_paths[0])
+        pixmap = QPixmap(self.photos[0])
         pixmap = pixmap.scaled(QSize(300, 150), Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.photo_preview.setPixmap(pixmap)
         
         # 显示照片数量
-        if len(self.photo_paths) > 1:
-            self.photo_preview.setText(f"已上传 {len(self.photo_paths)} 张照片")
+        if len(self.photos) > 1:
+            self.photo_preview.setText(f"已上传 {len(self.photos)} 张照片")
     
     def query_location(self):
         shop_name = self.name_edit.text().strip()
@@ -136,11 +182,12 @@ class AddFoodDialog(QDialog):
             return
         
         try:
-            # 调用百度地图API查询位置
-            url = "https://api.map.baidu.com/place/v2/search"
+            # 使用地点输入提示API查询位置
+            url = "https://api.map.baidu.com/place/v2/suggestion"
             params = {
                 "query": shop_name,
                 "region": city,
+                "city_limit": "true",  # 限制在当前城市内搜索
                 "output": "json",
                 "ak": self.api_key
             }
@@ -148,30 +195,84 @@ class AddFoodDialog(QDialog):
             response = requests.get(url, params=params)
             data = response.json()
             
-            if data["status"] == 0 and data["results"]:
-                # 获取第一个结果
-                result = data["results"][0]
-                location = result["location"]
-                address = result.get("address", "未知地址")
+            if data["status"] == 0:
+                results = data["result"]
                 
-                self.location_data = {
-                    "latitude": location["lat"],
-                    "longitude": location["lng"],
-                    "address": address
-                }
+                if not results:
+                    QMessageBox.information(self, "提示", "没有找到匹配的地点")
+                    return
                 
-                self.location_label.setText(f"位置: {address} ({location['lat']}, {location['lng']})")
-                self.save_btn.setEnabled(True)
+                if len(results) == 1:
+                    # 只有一个结果，直接使用
+                    place = results[0]
+                    self.use_selected_place_from_suggestion(place)
+                else:
+                    # 多个结果，显示选择对话框
+                    from ui.place_select_dialog import PlaceSelectDialog
+                    dialog = PlaceSelectDialog(results[:6], self, is_suggestion=True)  # 最多显示6个结果
+                    if dialog.exec_():
+                        selected_place = dialog.get_selected_place()
+                        if selected_place:
+                            self.use_selected_place_from_suggestion(selected_place)
             else:
-                QMessageBox.warning(self, "未找到", f"未找到店铺 '{shop_name}' 的位置信息，请检查名称或手动输入位置")
+                QMessageBox.warning(self, "错误", f"搜索地点失败: {data.get('message', '未知错误')}")
         
         except Exception as e:
             QMessageBox.critical(self, "错误", f"查询位置时出错: {str(e)}")
     
+    def use_selected_place_from_suggestion(self, place):
+        """从地点输入提示API中使用选择的地点填充表单"""
+        # 提取位置信息
+        location = place.get("location", {})
+        address = place.get("address", "")
+        
+        # 完整地址可能需要组合省市区
+        if not address:
+            province = place.get("province", "")
+            city = place.get("city", "")
+            district = place.get("district", "")
+            business = place.get("business", "")
+            
+            address_parts = []
+            if province:
+                address_parts.append(province)
+            if city and city != province:
+                address_parts.append(city)
+            if district:
+                address_parts.append(district)
+            if business:
+                address_parts.append(business)
+            
+            address = "-".join(address_parts) if address_parts else "未知地址"
+        
+        name = place.get("name", "")
+        
+        # 如果名称为空，使用当前输入的名称
+        if not name:
+            name = self.name_edit.text().strip()
+        else:
+            # 更新名称输入框
+            self.name_edit.setText(name)
+        
+        # 存储位置数据
+        self.location_data = {
+            "latitude": location.get("lat", 0),
+            "longitude": location.get("lng", 0),
+            "address": address
+        }
+        
+        # 更新位置标签
+        self.location_label.setText(
+            f"位置: {address} ({self.location_data['latitude']}, {self.location_data['longitude']})"
+        )
+        
+        # 启用保存按钮
+        self.save_btn.setEnabled(True)
+    
     def get_food_data(self):
         # 处理照片
         photo_data = []
-        for path in self.photo_paths:
+        for path in self.photos:
             # 读取图片并转换为合适的格式
             img = Image.open(path)
             img = img.convert('RGB')

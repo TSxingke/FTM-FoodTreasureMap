@@ -2,12 +2,15 @@ from PyQt5.QtWidgets import (QMainWindow, QSplitter, QAction, QFileDialog,
                             QMessageBox, QVBoxLayout, QWidget, QActionGroup)
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QIcon
+import json
+import datetime
 
 from ui.food_list_widget import FoodListWidget
 from ui.map_widget import MapWidget
 from ui.food_detail_widget import FoodDetailWidget
 from ui.add_food_dialog import AddFoodDialog
 from data.food_manager import FoodManager
+from config.api_keys import PLACE_SEARCH_AK
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -58,6 +61,10 @@ class MainWindow(QMainWindow):
         
         # 设置中央部件
         self.setCentralWidget(main_splitter)
+        
+        # 连接详情页面的删除和编辑信号
+        self.detail_widget.delete_requested.connect(self.delete_food_item)
+        self.detail_widget.edit_requested.connect(self.edit_food_item)
     
     def create_menu_bar(self):
         # 创建菜单栏
@@ -76,6 +83,11 @@ class MainWindow(QMainWindow):
         export_action = QAction(QIcon("icons/export.png"), "导出数据", self)
         export_action.triggered.connect(self.export_data)
         file_menu.addAction(export_action)
+        
+        # 导入数据
+        import_action = QAction("导入数据", self)
+        import_action.triggered.connect(self.import_data)
+        file_menu.addAction(import_action)
         
         file_menu.addSeparator()
         
@@ -120,7 +132,7 @@ class MainWindow(QMainWindow):
         self.map_widget.plot_food_locations(food_items)
     
     def show_add_food_dialog(self):
-        dialog = AddFoodDialog(self)
+        dialog = AddFoodDialog(self, api_key=PLACE_SEARCH_AK)
         if dialog.exec_():
             # 获取新添加的美食数据
             food_data = dialog.get_food_data()
@@ -143,13 +155,131 @@ class MainWindow(QMainWindow):
         self.map_widget.highlight_food_location(food_item)
     
     def export_data(self):
+        """导出美食数据到JSON文件"""
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "导出数据", "", "JSON文件 (*.json);;CSV文件 (*.csv)"
+            self, "导出数据", "", "JSON文件 (*.json)"
         )
         
         if file_path:
-            success = self.food_manager.export_data(file_path)
+            from data.food_manager import FoodManager
+            manager = FoodManager()
+            food_items = manager.get_all_food_items()
+            
+            # 为导出数据添加元数据
+            export_data = {
+                "metadata": {
+                    "user": "当前用户",  # 可以从配置或用户信息中获取
+                    "export_time": datetime.datetime.now().isoformat(),
+                    "version": "1.0"
+                },
+                "food_items": food_items,
+                "is_imported": False  # 标记为非导入数据
+            }
+            
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(export_data, f, ensure_ascii=False, indent=2)
+                success = True
+            except Exception as e:
+                print(f"导出数据时发生错误: {e}")
+                success = False
+            
             if success:
                 QMessageBox.information(self, "成功", f"数据已成功导出到 {file_path}")
             else:
-                QMessageBox.warning(self, "错误", "导出数据失败，请重试。") 
+                QMessageBox.warning(self, "错误", "导出数据失败，请重试。")
+
+    def import_data(self):
+        """导入美食数据从JSON文件"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "导入数据", "", "JSON文件 (*.json)"
+        )
+        
+        if file_path:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    import_data = json.load(f)
+                
+                # 检查数据格式
+                if not isinstance(import_data, dict) or "food_items" not in import_data:
+                    # 尝试兼容旧格式
+                    if isinstance(import_data, list):
+                        food_items = import_data
+                        metadata = {"user": "未知用户", "import_time": datetime.datetime.now().isoformat()}
+                    else:
+                        raise ValueError("不支持的数据格式")
+                else:
+                    food_items = import_data["food_items"]
+                    metadata = import_data.get("metadata", {})
+                
+                # 标记为导入数据
+                for item in food_items:
+                    item["is_imported"] = True
+                    item["imported_from"] = metadata.get("user", "未知用户")
+                    item["import_time"] = datetime.datetime.now().isoformat()
+                
+                # 添加到数据管理器
+                from data.food_manager import FoodManager
+                manager = FoodManager()
+                added_count = 0
+                for item in food_items:
+                    if manager.add_food_item(item):
+                        added_count += 1
+                
+                # 刷新显示 - 使用正确的刷新方法
+                self.load_food_data()  # 使用现有的数据加载方法
+                
+                QMessageBox.information(self, "导入成功", f"成功导入 {added_count} 个美食点")
+                
+            except Exception as e:
+                QMessageBox.warning(self, "导入失败", f"导入数据时发生错误: {str(e)}") 
+
+    def delete_food_item(self, food_id):
+        """删除美食项"""
+        confirm = QMessageBox.question(
+            self, 
+            "确认删除", 
+            "确定要删除这个美食记录吗？这个操作不可撤销。",
+            QMessageBox.Yes | QMessageBox.No, 
+            QMessageBox.No
+        )
+        
+        if confirm == QMessageBox.Yes:
+            success = self.food_manager.delete_food_item(food_id)
+            if success:
+                # 刷新数据
+                self.load_food_data()
+                self.detail_widget.clear_details()
+                QMessageBox.information(self, "成功", "美食记录已删除！")
+            else:
+                QMessageBox.warning(self, "错误", "删除美食记录失败，请重试。")
+
+    def edit_food_item(self, food_id):
+        """编辑美食项"""
+        # 获取美食数据
+        food_item = self.food_manager.get_food_item(food_id)
+        if not food_item:
+            QMessageBox.warning(self, "错误", "无法获取美食记录信息，请重试。")
+            return
+        
+        # 创建编辑对话框，传入API密钥
+        api_key = getattr(self.map_widget, 'api_key', None)
+        if not api_key:
+            # 如果地图组件没有API密钥属性，使用配置文件或者硬编码的默认值
+            api_key = "IwROZMfGJmOcfruwdxtDtEAPFtyQPJp3"  # 替换为你的密钥
+        
+        dialog = AddFoodDialog(self, editing=True, food_data=food_item, api_key=api_key)
+        
+        if dialog.exec_():
+            # 获取编辑后的美食数据
+            updated_food = dialog.get_food_data()
+            
+            # 更新数据库
+            success = self.food_manager.update_food_item(food_id, updated_food)
+            
+            if success:
+                # 刷新数据
+                self.load_food_data()
+                QMessageBox.information(self, "成功", "美食记录已更新！")
+            else:
+                QMessageBox.warning(self, "错误", "更新美食记录失败，请重试。") 
