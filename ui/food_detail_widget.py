@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QLabel, QHBoxLayout, 
-                            QScrollArea, QGridLayout, QPushButton)
+                            QScrollArea, QGridLayout, QPushButton, QTextEdit, QMessageBox)
 from PyQt5.QtCore import Qt, QSize, QBuffer, pyqtSignal
 from PyQt5.QtGui import QPixmap, QImage, QFont, QIcon
 from data.food_manager import FoodManager
@@ -10,82 +10,84 @@ class FoodDetailWidget(QWidget):
     delete_requested = pyqtSignal(int)  # 传递美食ID
     edit_requested = pyqtSignal(int)    # 传递美食ID
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         
         self.food_manager = FoodManager()
+        self.food_data = None
         self.current_food_id = None
         
         self.setup_ui()
     
     def setup_ui(self):
-        main_layout = QVBoxLayout()
+        # 创建主布局
+        self.main_layout = QVBoxLayout(self)
         
-        # 标题
-        self.title_label = QLabel("请选择美食项")
-        self.title_label.setStyleSheet("font-size: 18px; font-weight: bold;")
-        main_layout.addWidget(self.title_label)
+        # 创建内容布局
+        self.content_layout = QVBoxLayout()
+        self.content_layout.setSpacing(10)
         
-        # 操作按钮区域
-        action_layout = QHBoxLayout()
+        # 美食名称
+        self.name_label = QLabel("选择一个美食点以查看详情")
+        self.name_label.setAlignment(Qt.AlignCenter)
+        font = self.name_label.font()
+        font.setPointSize(16)
+        font.setBold(True)
+        self.name_label.setFont(font)
+        self.content_layout.addWidget(self.name_label)
         
-        # 编辑按钮
-        self.edit_button = QPushButton("编辑")
-        self.edit_button.setIcon(QIcon("icons/edit.png"))
-        self.edit_button.clicked.connect(self.request_edit)
-        action_layout.addWidget(self.edit_button)
+        # 评分
+        self.rating_label = QLabel("评分: --")
+        self.rating_label.setAlignment(Qt.AlignCenter)
+        self.content_layout.addWidget(self.rating_label)
         
-        # 删除按钮
-        self.delete_button = QPushButton("删除")
-        self.delete_button.setIcon(QIcon("icons/delete.png"))
-        self.delete_button.clicked.connect(self.request_delete)
-        action_layout.addWidget(self.delete_button)
+        # 城市和地址
+        info_layout = QVBoxLayout()
+        self.city_label = QLabel("城市: --")
+        self.address_label = QLabel("地址: --")
+        self.type_label = QLabel("类型: --")
         
-        action_layout.addStretch()
-        main_layout.addLayout(action_layout)
+        info_layout.addWidget(self.city_label)
+        info_layout.addWidget(self.address_label)
+        info_layout.addWidget(self.type_label)
         
-        # 信息区域
-        info_scroll = QScrollArea()
-        info_scroll.setWidgetResizable(True)
-        info_widget = QWidget()
-        info_scroll.setWidget(info_widget)
-        
-        info_layout = QVBoxLayout(info_widget)
-        
-        # 基本信息区
-        basic_info_widget = QWidget()
-        self.info_layout = QGridLayout(basic_info_widget)
-        info_layout.addWidget(basic_info_widget)
+        self.content_layout.addLayout(info_layout)
         
         # 推荐理由
-        self.reason_label = QLabel()
-        self.reason_label.setWordWrap(True)
-        info_layout.addWidget(self.reason_label)
+        self.content_layout.addWidget(QLabel("推荐理由:"))
+        self.reason_text = QTextEdit()
+        self.reason_text.setReadOnly(True)
+        self.reason_text.setMaximumHeight(100)
+        self.content_layout.addWidget(self.reason_text)
         
-        # 照片区域
-        photos_widget = QWidget()
-        self.photos_layout = QHBoxLayout(photos_widget)
-        info_layout.addWidget(photos_widget)
+        # 照片
+        # self.content_layout.addWidget(QLabel("美食照片:"))  # 删除这一行
         
-        info_layout.addStretch()
+        # 创建照片滚动区域
+        self.photo_scroll = QScrollArea()
+        self.photo_scroll.setWidgetResizable(True)
+        self.photo_scroll.setMinimumHeight(150)
         
-        main_layout.addWidget(info_scroll)
-        self.setLayout(main_layout)
+        # 照片容器
+        self.photo_container = QWidget()
+        self.photo_layout = QHBoxLayout(self.photo_container)
+        self.photo_layout.setAlignment(Qt.AlignLeft)
         
-        # 初始时禁用按钮
-        self.edit_button.setEnabled(False)
-        self.delete_button.setEnabled(False)
+        self.photo_scroll.setWidget(self.photo_container)
+        self.content_layout.addWidget(self.photo_scroll)
+        
+        # 将内容布局添加到主布局
+        self.main_layout.addLayout(self.content_layout)
     
     def display_food_details(self, food_item):
         """显示美食详情"""
         self.current_food_id = food_item["id"]
         
         # 清除现有内容
-        self.clear_layout(self.info_layout)
-        self.clear_layout(self.photos_layout)
+        self.clear_layout(self.photo_layout)
         
         # 设置标题
-        self.title_label.setText(food_item["name"])
+        self.name_label.setText(food_item["name"])
         
         # 设置基本信息
         info_items = [
@@ -97,55 +99,72 @@ class FoodDetailWidget(QWidget):
         ]
         
         for row, (label, value) in enumerate(info_items):
-            self.info_layout.addWidget(QLabel(label), row, 0)
-            self.info_layout.addWidget(QLabel(value), row, 1)
+            self.city_label.setText(f"{label} {value}")
         
         # 设置推荐理由
         reason_text = food_item.get("reason", "")
         if reason_text:
-            self.reason_label.setText(f"<b>推荐理由:</b><br>{reason_text}")
-            self.reason_label.show()
+            self.reason_text.setPlainText(reason_text)
+            self.reason_text.show()
         else:
-            self.reason_label.hide()
+            self.reason_text.hide()
         
         # 加载照片
-        self.load_photos(food_item["id"], food_item.get("photo_ids", []))
-        
-        # 启用按钮
-        self.edit_button.setEnabled(True)
-        self.delete_button.setEnabled(True)
+        self.load_photos(food_item["id"])
     
-    def load_photos(self, food_id, photo_ids):
-        """加载照片"""
-        if not photo_ids:
-            self.photos_layout.addWidget(QLabel("暂无照片"))
+    def load_photos(self, food_id):
+        """加载美食照片"""
+        # 清除现有照片
+        while self.photo_layout.count():
+            item = self.photo_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        
+        if not food_id:
             return
         
-        # 获取完整的美食数据（包含照片）
-        food_data = self.food_manager.get_food_item(food_id)
-        if not food_data or not food_data.get("photos"):
-            self.photos_layout.addWidget(QLabel("无法加载照片"))
-            return
+        # 获取照片数据
+        conn = None
+        try:
+            conn = self.food_manager.get_connection()
+            cursor = conn.cursor()
+            
+            # 查询所有相关照片 - 确保使用正确的表名
+            cursor.execute("SELECT id, photo_data FROM photos WHERE food_item_id = ?", (food_id,))
+            photos = cursor.fetchall()
+            
+            if not photos:
+                # 没有照片时不显示任何内容
+                # 不显示"暂无照片"文本，让界面更加简洁
+                return
+            
+            # 显示每张照片
+            for photo_id, photo_data in photos:
+                pixmap = QPixmap()
+                if pixmap.loadFromData(photo_data):
+                    # 等比例缩放到合适大小
+                    pixmap = pixmap.scaled(200, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    
+                    photo_label = QLabel()
+                    photo_label.setPixmap(pixmap)
+                    photo_label.setFixedSize(200, 150)
+                    photo_label.setScaledContents(False)
+                    photo_label.setAlignment(Qt.AlignCenter)
+                    photo_label.setStyleSheet("border: 1px solid #ccc; margin: 5px;")
+                    
+                    self.photo_layout.addWidget(photo_label)
+                else:
+                    print(f"无法加载照片ID: {photo_id}")
+            
+            # 添加弹性空间
+            self.photo_layout.addStretch()
         
-        # 显示照片
-        for photo in food_data["photos"]:
-            # 从二进制数据创建图像
-            image = QImage.fromData(photo["data"])
-            pixmap = QPixmap.fromImage(image)
-            
-            # 调整大小
-            pixmap = pixmap.scaled(QSize(200, 150), Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            
-            # 创建标签显示图像
-            photo_label = QLabel()
-            photo_label.setPixmap(pixmap)
-            photo_label.setAlignment(Qt.AlignCenter)
-            photo_label.setStyleSheet("border: 1px solid #ccc; margin: 5px;")
-            
-            self.photos_layout.addWidget(photo_label)
+        except Exception as e:
+            print(f"加载照片错误: {e}")
         
-        # 添加弹性空间
-        self.photos_layout.addStretch()
+        finally:
+            if conn:
+                conn.close()
     
     def clear_layout(self, layout):
         """清除布局中的所有控件"""
@@ -171,11 +190,34 @@ class FoodDetailWidget(QWidget):
     def clear_details(self):
         """清除详情显示"""
         self.current_food_id = None
-        self.title_label.setText("请选择美食项")
-        self.clear_layout(self.info_layout)
-        self.clear_layout(self.photos_layout)
-        self.reason_label.hide()
+        self.name_label.setText("请选择美食项")
+        self.clear_layout(self.photo_layout)
+        self.reason_text.hide()
+    
+    def set_food_data(self, food_data):
+        """设置美食数据并更新显示"""
+        self.food_data = food_data
         
-        # 禁用按钮
-        self.edit_button.setEnabled(False)
-        self.delete_button.setEnabled(False) 
+        # 更新标题和基本信息
+        self.name_label.setText(food_data.get("name", "未知"))
+        self.rating_label.setText(f"评分: {food_data.get('rating', 0)}")
+        self.city_label.setText(f"城市: {food_data.get('city', '未知')}")
+        self.address_label.setText(f"地址: {food_data.get('address', '未知')}")
+        
+        # 更新类型信息
+        food_type = food_data.get("food_type", "")
+        if food_type:
+            self.type_label.setText(f"类型: {food_type}")
+            self.type_label.setVisible(True)
+        else:
+            self.type_label.setVisible(False)
+        
+        # 更新推荐理由
+        reason = food_data.get("reason", "")
+        if reason:
+            self.reason_text.setPlainText(reason)
+        else:
+            self.reason_text.setPlainText("暂无推荐理由")
+        
+        # 加载照片
+        self.load_photos(food_data.get("id")) 

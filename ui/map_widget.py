@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout, QPushButton
 from PyQt5.QtCore import Qt, QUrl, pyqtSignal, QTimer
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
 import json
@@ -12,13 +12,16 @@ class MapWidget(QWidget):
     def __init__(self):
         super().__init__()
         
-        self.api_key = PLACE_SEARCH_AK
+        self.api_key = "IwROZMfGJmOcfruwdxtDtEAPFtyQPJp3"
         self.api_key_gl = MAP_DISPLAY_AK
         self.view_mode = "country"  # 默认全国视图
         self.current_city = "北京"   # 默认城市
         
         self.setup_ui()
         self.initialize_map()
+        
+        # 加载保存的城市列表
+        self.load_cities()
     
     def setup_ui(self):
         layout = QVBoxLayout()
@@ -29,9 +32,16 @@ class MapWidget(QWidget):
         # 城市选择
         control_layout.addWidget(QLabel("当前城市:"))
         self.city_combo = QComboBox()
+        # 改为只读模式
+        self.city_combo.setEditable(False)
         self.city_combo.addItems(["北京", "上海", "广州", "深圳", "成都", "杭州"])
         self.city_combo.currentTextChanged.connect(self.on_city_changed)
         control_layout.addWidget(self.city_combo)
+        
+        # 添加城市管理按钮
+        manage_cities_btn = QPushButton("城市管理")
+        manage_cities_btn.clicked.connect(self.show_city_manager)
+        control_layout.addWidget(manage_cities_btn)
         
         control_layout.addStretch()
         layout.addLayout(control_layout)
@@ -97,7 +107,7 @@ class MapWidget(QWidget):
                 }}
                 
                 // 添加食物标记
-                function addFoodMarker(lng, lat, name, rating, id, address, reason, city) {{
+                function addFoodMarker(lng, lat, name, rating, id, address, reason, city, food_type) {{
                     var point = new BMapGL.Point(lng, lat);
                     
                     // 根据评分设置颜色
@@ -114,7 +124,8 @@ class MapWidget(QWidget):
                         rating: rating,
                         address: address,
                         reason: reason || "暂无推荐理由",
-                        city: city
+                        city: city,
+                        food_type: food_type
                     }};
                     
                     // 添加点击事件
@@ -135,6 +146,10 @@ class MapWidget(QWidget):
                                 <div style="margin-bottom: 8px;">
                                     <span style="font-weight: bold;">评分: </span>
                                     <span>${{rating}} / 10</span>
+                                </div>
+                                <div style="margin-bottom: 8px;">
+                                    <span style="font-weight: bold;">类型: </span>
+                                    <span>${{food_type}}</span>
                                 </div>
                                 <div style="margin-bottom: 8px;">
                                     <span style="font-weight: bold;">地址: </span>
@@ -296,7 +311,8 @@ class MapWidget(QWidget):
                         {item['id']},
                         "{address}",
                         "{reason}",
-                        "{city}"
+                        "{city}",
+                        "{item['food_type']}"
                     );"""
                     self.web_view.page().runJavaScript(js_code)
             else:
@@ -314,4 +330,93 @@ class MapWidget(QWidget):
         from data.food_manager import FoodManager
         food_manager = FoodManager()
         food_items = food_manager.get_all_food_items()
-        self.plot_food_locations(food_items) 
+        self.plot_food_locations(food_items)
+    
+    # 在第一次使用时加载所有城市列表
+    def load_all_cities(self):
+        """加载数据库中所有城市"""
+        from data.food_manager import FoodManager
+        food_manager = FoodManager()
+        
+        try:
+            conn = food_manager.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT DISTINCT city FROM food_items ORDER BY city")
+            cities = [row[0] for row in cursor.fetchall()]
+            
+            # 清除现有项
+            self.city_combo.clear()
+                
+            # 添加城市
+            for city in cities:
+                if city:
+                    self.city_combo.addItem(city)
+                    
+            # 如果没有城市，添加默认城市
+            if self.city_combo.count() == 0:
+                self.city_combo.addItems(["北京", "上海", "广州", "深圳", "成都", "杭州"])
+        
+        except Exception as e:
+            print(f"加载城市列表失败: {e}")
+        
+        finally:
+            if conn:
+                conn.close()
+
+    def show_city_manager(self):
+        """显示城市管理对话框"""
+        from ui.city_dialog import CityDialog
+        
+        # 获取现有城市列表
+        cities = []
+        for i in range(self.city_combo.count()):
+            cities.append(self.city_combo.itemText(i))
+        
+        dialog = CityDialog(self, existing_cities=cities)
+        if dialog.exec_():
+            # 获取更新后的城市列表
+            updated_cities = dialog.get_cities()
+            
+            # 更新城市下拉框
+            current_city = self.city_combo.currentText()
+            self.city_combo.clear()
+            self.city_combo.addItems(updated_cities)
+            
+            # 尝试恢复选中的城市
+            index = self.city_combo.findText(current_city)
+            if index >= 0:
+                self.city_combo.setCurrentIndex(index)
+            
+            # 保存城市列表到配置文件
+            self.save_cities(updated_cities)
+
+    def save_cities(self, cities):
+        """保存城市列表到配置文件"""
+        try:
+            config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config")
+            os.makedirs(config_dir, exist_ok=True)
+            
+            config_path = os.path.join(config_dir, "cities.json")
+            
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(cities, f, ensure_ascii=False, indent=2)
+        
+        except Exception as e:
+            print(f"Error saving cities: {e}")
+
+    def load_cities(self):
+        """从配置文件加载城市列表"""
+        try:
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "cities.json")
+            
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    cities = json.load(f)
+                
+                # 更新城市下拉框
+                self.city_combo.clear()
+                self.city_combo.addItems(cities)
+        
+        except Exception as e:
+            print(f"Error loading cities: {e}") 

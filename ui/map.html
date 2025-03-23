@@ -42,7 +42,7 @@
                 }
                 
                 // 添加食物标记
-                function addFoodMarker(lng, lat, name, rating, id, address, reason, city) {
+                function addFoodMarker(lng, lat, name, rating, id, address, reason, city, food_type) {
                     var point = new BMapGL.Point(lng, lat);
                     
                     // 根据评分设置颜色
@@ -59,7 +59,8 @@
                         rating: rating,
                         address: address,
                         reason: reason || "暂无推荐理由",
-                        city: city
+                        city: city,
+                        food_type: food_type
                     };
                     
                     // 添加点击事件
@@ -80,6 +81,10 @@
                                 <div style="margin-bottom: 8px;">
                                     <span style="font-weight: bold;">评分: </span>
                                     <span>${rating} / 10</span>
+                                </div>
+                                <div style="margin-bottom: 8px;">
+                                    <span style="font-weight: bold;">类型: </span>
+                                    <span>${food_type}</span>
                                 </div>
                                 <div style="margin-bottom: 8px;">
                                     <span style="font-weight: bold;">地址: </span>
