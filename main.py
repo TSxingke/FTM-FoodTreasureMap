@@ -1,7 +1,7 @@
 import sys
 import os
 from PyQt5.QtWidgets import QApplication, QMessageBox
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QFont, QFontDatabase, QIcon
 from ui.main_window import MainWindow
 from ui.api_key_dialog import ApiKeyDialog
 from data.database import initialize_database
@@ -19,17 +19,21 @@ def main():
     # 创建应用程序
     app = QApplication(sys.argv)
     app.setApplicationName("美食地图")
-    app.setWindowIcon(QIcon("icons/FTM.png"))
     
-    # 设置应用样式
-    app.setStyle("Fusion")
+    # 设置应用图标
+    app_icon_path = os.path.join("icons", "FTM.png")
+    if os.path.exists(app_icon_path):
+        app.setWindowIcon(QIcon(app_icon_path))
+    
+    # 设置全局字体
+    font = QFont("微软雅黑", 9)
+    app.setFont(font)
     
     # 检查是否已配置API密钥
     if not PLACE_SEARCH_AK or not MAP_DISPLAY_AK:
         # 显示配置对话框
         dialog = ApiKeyDialog()
         dialog.setWindowTitle("首次使用 - 设置API密钥")
-        dialog.setWindowIcon(QIcon("icons/FTM.png"))
         if dialog.exec_():
             # 通知用户重启应用
             QMessageBox.information(None, "配置完成", "API密钥已配置，请重启应用程序。")
