@@ -105,16 +105,33 @@ def create_action_icon(filename, color, shape):
     img.save(filename)
 
 def main():
-    """创建所有需要的图标"""
-    # 创建星级图标
-    create_star_icon("icons/star_gold.png", "#FFD700")  # 金色
-    create_star_icon("icons/star_silver.png", "#C0C0C0")  # 银色
-    create_star_icon("icons/star_bronze.png", "#CD7F32")  # 铜色
+    """检查所需的图标是否存在，并列出图标清单"""
+    # 列出需要的图标及其用途
+    required_icons = {
+        "icons/star_gold.png": "显示餐厅的金级评分",
+        "icons/star_silver.png": "显示餐厅的银级评分",
+        "icons/star_bronze.png": "显示餐厅的铜级评分",
+        "icons/add.png": "添加新的美食记录按钮",
+        "icons/export.png": "导出数据按钮",
+        "icons/exit.png": "退出应用按钮",
+        "icons/import.png": "导入数据按钮", 
+        "icons/key.png": "设置API密钥按钮"
+    }
     
-    # 创建操作图标
-    create_action_icon("icons/add.png", "#32CD32", "add")  # 绿色加号
-    create_action_icon("icons/export.png", "#1E90FF", "export")  # 蓝色导出
-    create_action_icon("icons/exit.png", "#FF4500", "exit")  # 红色退出
+    # 检查是否所有图标都存在
+    missing_icons = []
+    for icon_path in required_icons:
+        if not os.path.exists(icon_path):
+            missing_icons.append(icon_path)
+    
+    # 如果有缺失的图标，显示提示信息
+    if missing_icons:
+        print("以下图标文件缺失，请确保它们存在于正确的位置:")
+        for icon in missing_icons:
+            print(f"- {icon}: {required_icons[icon]}")
+        print("\n请注意：应用程序需要这些图标才能正常显示。请手动添加这些图标到对应位置。")
+    
+    return missing_icons
 
 if __name__ == "__main__":
     main()

@@ -12,11 +12,7 @@
                     padding: 0;
                 }
             </style>
-            <script>
-                window.HOST_TYPE = '2';
-                window.BMapGL_loadScriptTime = (new Date).getTime();
-            </script>
-            <script type="text/javascript" src="https://api.map.baidu.com/getscript?type=webgl&v=1.0&ak=OBUkmzeyCj9vCfell3YPGqKGN47Sj9LJ&services=&t=20250313124310"></script>
+            <script type="text/javascript" src="https://api.map.baidu.com/api?v=3.0&ak=OBUkmzeyCj9vCfell3YPGqKGN47Sj9LJ"></script>
         </head>
         <body>
             <div id="map-container"></div>
@@ -28,8 +24,8 @@
                 
                 // 初始化地图
                 function initMap() {
-                    map = new BMapGL.Map("map-container");
-                    var point = new BMapGL.Point(116.404, 39.915); // 默认北京
+                    map = new BMap.Map("map-container");
+                    var point = new BMap.Point(116.404, 39.915); // 默认北京
                     map.centerAndZoom(point, 5);  // 全国视图
                     
                     // 启用滚轮缩放和平移
@@ -37,19 +33,19 @@
                     map.enableDragging();
                     
                     // 添加控件
-                    map.addControl(new BMapGL.NavigationControl());
-                    map.addControl(new BMapGL.ScaleControl());
+                    map.addControl(new BMap.NavigationControl());
+                    map.addControl(new BMap.ScaleControl());
                 }
                 
                 // 添加食物标记
                 function addFoodMarker(lng, lat, name, rating, id, address, reason, city, food_type) {
-                    var point = new BMapGL.Point(lng, lat);
+                    var point = new BMap.Point(lng, lat);
                     
                     // 根据评分设置颜色
                     var color = getColorByRating(rating);
                     
                     // 创建标记
-                    var marker = new BMapGL.Marker(point);
+                    var marker = new BMap.Marker(point);
                     marker.setTitle(name);
                     
                     // 存储美食点数据
@@ -65,32 +61,23 @@
                     
                     // 添加点击事件
                     marker.addEventListener("click", function() {
-                        // 关闭之前的信息窗口
-                        if (map.infoWindow) {
-                            map.closeInfoWindow();
-                        }
-                        
                         // 创建信息卡片内容
                         var content = `
-                            <div style="background-color: rgba(255, 255, 255, 0.8); 
-                                        padding: 15px; 
-                                        border-radius: 8px; 
-                                        max-width: 300px;
-                                        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);">
-                                <h3 style="margin-top: 0; color: ${color};">${name}</h3>
-                                <div style="margin-bottom: 8px;">
+                            <div style="width: 280px; overflow: hidden;">
+                                <h3 style="margin-top: 0; margin-bottom: 8px;">${name}</h3>
+                                <div>
                                     <span style="font-weight: bold;">评分: </span>
                                     <span>${rating} / 10</span>
                                 </div>
-                                <div style="margin-bottom: 8px;">
+                                <div>
                                     <span style="font-weight: bold;">类型: </span>
                                     <span>${food_type}</span>
                                 </div>
-                                <div style="margin-bottom: 8px;">
+                                <div>
                                     <span style="font-weight: bold;">地址: </span>
                                     <span>${address}</span>
                                 </div>
-                                <div style="margin-bottom: 8px;">
+                                <div>
                                     <span style="font-weight: bold;">城市: </span>
                                     <span>${city}</span>
                                 </div>
@@ -101,20 +88,9 @@
                             </div>
                         `;
                         
-                        // 创建并打开信息窗口
-                        var infoWindow = new BMapGL.InfoWindow(content, {
-                            width: 320,
-                            height: 200,
-                            title: "",
-                            enableMessage: false,
-                            enableCloseOnClick: true
-                        });
-                        
-                        map.infoWindow = infoWindow;
-                        marker.openInfoWindow(infoWindow, point);
-                        
-                        // 通知Python应用高亮显示此美食点
-                        window.pywebview.api.highlightFoodItem(id);
+                        // 创建信息窗口
+                        var infoWindow = new BMap.InfoWindow(content);
+                        marker.openInfoWindow(infoWindow);
                     });
                     
                     // 添加到地图
@@ -123,7 +99,7 @@
                     
                     // 添加探索范围圆
                     var radius = (viewMode === "city") ? 1000 : 10000;
-                    var circle = new BMapGL.Circle(point, radius, {
+                    var circle = new BMap.Circle(point, radius, {
                         strokeColor: color,
                         strokeWeight: 1,
                         strokeOpacity: 0.5,
@@ -158,7 +134,7 @@
                 
                 // 设置城市
                 function setCity(cityName) {
-                    var myGeo = new BMapGL.Geocoder();
+                    var myGeo = new BMap.Geocoder();
                     myGeo.getPoint(cityName, function(point) {
                         if (point) {
                             map.centerAndZoom(point, viewMode === "country" ? 5 : 12);
@@ -177,7 +153,28 @@
                 
                 // 高亮显示标记
                 function highlightMarker(id) {
-                    // 实现高亮逻辑
+                    // 查找对应的标记
+                    for (var i = 0; i < markers.length; i++) {
+                        if (markers[i].foodData && markers[i].foodData.id == id) {
+                            // 简单地将地图中心移动到标记位置
+                            var point = markers[i].getPosition();
+                            map.panTo(point);
+                            break;
+                        }
+                    }
+                }
+                
+                // 通过ID显示信息窗口
+                function showInfoWindowById(id) {
+                    for (var i = 0; i < markers.length; i++) {
+                        if (markers[i].foodData && markers[i].foodData.id == id) {
+                            // 模拟点击事件
+                            var e = document.createEvent('MouseEvents');
+                            e.initEvent('click', true, true);
+                            markers[i].dispatchEvent(e);
+                            break;
+                        }
+                    }
                 }
                 
                 // 页面加载完成后初始化地图

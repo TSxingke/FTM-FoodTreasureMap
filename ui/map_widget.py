@@ -1,6 +1,7 @@
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout, QPushButton
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QComboBox, QHBoxLayout, QPushButton, QProgressBar
 from PyQt5.QtCore import Qt, QUrl, pyqtSignal, QTimer
 from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
+from PyQt5.QtGui import QIcon
 import json
 import requests
 import os
@@ -11,6 +12,28 @@ from config.api_keys import MAP_DISPLAY_AK
 class MapWidget(QWidget):
     def __init__(self):
         super().__init__()
+        
+        # 设置基本样式
+        self.setStyleSheet("""
+            QComboBox {
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                padding: 5px;
+                background-color: white;
+                min-width: 150px;
+            }
+            QPushButton {
+                background-color: #ff7043;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 5px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #ff5722;
+            }
+        """)
         
         self.api_key = "IwROZMfGJmOcfruwdxtDtEAPFtyQPJp3"
         self.api_key_gl = MAP_DISPLAY_AK
@@ -25,44 +48,90 @@ class MapWidget(QWidget):
     
     def setup_ui(self):
         layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)  # 减少间距以最大化地图区域
         
-        # 顶部控制栏
-        control_layout = QHBoxLayout()
+        # 添加控制面板
+        control_panel = QWidget()
+        control_panel.setMaximumHeight(40)  # 减小控制面板高度
+        control_layout = QHBoxLayout(control_panel)
+        control_layout.setContentsMargins(5, 5, 5, 5)
         
-        # 城市选择
-        control_layout.addWidget(QLabel("当前城市:"))
+        # 城市选择控件
+        city_label = QLabel("当前城市:")
+        city_label.setStyleSheet("font-weight: bold;")
+        control_layout.addWidget(city_label)
+        
         self.city_combo = QComboBox()
-        # 改为只读模式
-        self.city_combo.setEditable(False)
-        self.city_combo.addItems(["北京", "上海", "广州", "深圳", "成都", "杭州"])
+        self.city_combo.addItems(["北京", "上海", "广州", "深圳", "成都", "杭州", "武汉", "西安", "南京", "重庆"])
         self.city_combo.currentTextChanged.connect(self.on_city_changed)
         control_layout.addWidget(self.city_combo)
         
-        # 添加城市管理按钮
-        manage_cities_btn = QPushButton("城市管理")
-        manage_cities_btn.clicked.connect(self.show_city_manager)
-        control_layout.addWidget(manage_cities_btn)
+        # 添加刷新按钮
+        refresh_btn = QPushButton("刷新地图")
+        refresh_btn.setIcon(QIcon("icons/refresh.png"))
+        refresh_btn.clicked.connect(self.refresh_map)
+        control_layout.addWidget(refresh_btn)
         
-        control_layout.addStretch()
-        layout.addLayout(control_layout)
+        # 添加弹性空间
+        control_layout.addStretch(1)
+        
+        # 添加视图切换标签
+        view_label = QLabel("视图模式:")
+        view_label.setStyleSheet("font-weight: bold;")
+        control_layout.addWidget(view_label)
+        
+        # 添加视图切换按钮
+        country_btn = QPushButton("全国视图")
+        country_btn.clicked.connect(lambda: self.set_view_mode("country"))
+        control_layout.addWidget(country_btn)
+        
+        city_btn = QPushButton("城市视图")
+        city_btn.clicked.connect(lambda: self.set_view_mode("city"))
+        control_layout.addWidget(city_btn)
+        
+        layout.addWidget(control_panel)
         
         # 地图视图
         self.web_view = QWebEngineView()
+        self.web_view.page().profile().clearHttpCache()
         
-        # 添加以下代码，启用跨域访问
-        settings = self.web_view.settings()
-        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
-        settings.setAttribute(QWebEngineSettings.AllowRunningInsecureContent, True)
+        # 添加进度条
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setMaximumHeight(3)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #f5f5f5;
+                border: none;
+                border-radius: 2px;
+            }
+            QProgressBar::chunk {
+                background-color: #ff7043;
+                border-radius: 2px;
+            }
+        """)
         
+        self.web_view.loadProgress.connect(self.progress_bar.setValue)
+        self.web_view.loadFinished.connect(lambda: self.progress_bar.setVisible(False))
+        self.web_view.loadStarted.connect(lambda: self.progress_bar.setVisible(True))
+        
+        layout.addWidget(self.progress_bar)
         layout.addWidget(self.web_view)
         
         self.setLayout(layout)
+        
+        # 初始化地图
+        self.food_markers = []
     
     def initialize_map(self):
-        # 创建本地HTML文件
-        html_file_path = os.path.join(os.path.dirname(__file__), "map.html")
+        """初始化地图"""
+        # 确定HTML文件路径
+        html_dir = os.path.dirname(os.path.abspath(__file__))
+        html_file_path = os.path.join(html_dir, "map.html")
         
-        # 创建HTML内容 - 注意这里使用 {{ 和 }} 来转义 JavaScript 中的 ${ 和 }
+        # 创建HTML内容
         html_content = f"""
         <!DOCTYPE html>
         <html>
@@ -77,11 +146,7 @@ class MapWidget(QWidget):
                     padding: 0;
                 }}
             </style>
-            <script>
-                window.HOST_TYPE = '2';
-                window.BMapGL_loadScriptTime = (new Date).getTime();
-            </script>
-            <script type="text/javascript" src="https://api.map.baidu.com/getscript?type=webgl&v=1.0&ak={self.api_key_gl}&services=&t=20250313124310"></script>
+            <script type="text/javascript" src="https://api.map.baidu.com/api?v=3.0&ak={self.api_key_gl}"></script>
         </head>
         <body>
             <div id="map-container"></div>
@@ -93,8 +158,8 @@ class MapWidget(QWidget):
                 
                 // 初始化地图
                 function initMap() {{
-                    map = new BMapGL.Map("map-container");
-                    var point = new BMapGL.Point(116.404, 39.915); // 默认北京
+                    map = new BMap.Map("map-container");
+                    var point = new BMap.Point(116.404, 39.915); // 默认北京
                     map.centerAndZoom(point, 5);  // 全国视图
                     
                     // 启用滚轮缩放和平移
@@ -102,19 +167,19 @@ class MapWidget(QWidget):
                     map.enableDragging();
                     
                     // 添加控件
-                    map.addControl(new BMapGL.NavigationControl());
-                    map.addControl(new BMapGL.ScaleControl());
+                    map.addControl(new BMap.NavigationControl());
+                    map.addControl(new BMap.ScaleControl());
                 }}
                 
                 // 添加食物标记
                 function addFoodMarker(lng, lat, name, rating, id, address, reason, city, food_type) {{
-                    var point = new BMapGL.Point(lng, lat);
+                    var point = new BMap.Point(lng, lat);
                     
                     // 根据评分设置颜色
                     var color = getColorByRating(rating);
                     
                     // 创建标记
-                    var marker = new BMapGL.Marker(point);
+                    var marker = new BMap.Marker(point);
                     marker.setTitle(name);
                     
                     // 存储美食点数据
@@ -130,32 +195,23 @@ class MapWidget(QWidget):
                     
                     // 添加点击事件
                     marker.addEventListener("click", function() {{
-                        // 关闭之前的信息窗口
-                        if (map.infoWindow) {{
-                            map.closeInfoWindow();
-                        }}
-                        
                         // 创建信息卡片内容
                         var content = `
-                            <div style="background-color: rgba(255, 255, 255, 0.8); 
-                                        padding: 15px; 
-                                        border-radius: 8px; 
-                                        max-width: 300px;
-                                        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);">
-                                <h3 style="margin-top: 0; color: ${{color}};">${{name}}</h3>
-                                <div style="margin-bottom: 8px;">
+                            <div style="width: 280px; overflow: hidden;">
+                                <h3 style="margin-top: 0; margin-bottom: 8px;">${{name}}</h3>
+                                <div>
                                     <span style="font-weight: bold;">评分: </span>
                                     <span>${{rating}} / 10</span>
                                 </div>
-                                <div style="margin-bottom: 8px;">
+                                <div>
                                     <span style="font-weight: bold;">类型: </span>
                                     <span>${{food_type}}</span>
                                 </div>
-                                <div style="margin-bottom: 8px;">
+                                <div>
                                     <span style="font-weight: bold;">地址: </span>
                                     <span>${{address}}</span>
                                 </div>
-                                <div style="margin-bottom: 8px;">
+                                <div>
                                     <span style="font-weight: bold;">城市: </span>
                                     <span>${{city}}</span>
                                 </div>
@@ -166,20 +222,9 @@ class MapWidget(QWidget):
                             </div>
                         `;
                         
-                        // 创建并打开信息窗口
-                        var infoWindow = new BMapGL.InfoWindow(content, {{
-                            width: 320,
-                            height: 200,
-                            title: "",
-                            enableMessage: false,
-                            enableCloseOnClick: true
-                        }});
-                        
-                        map.infoWindow = infoWindow;
-                        marker.openInfoWindow(infoWindow, point);
-                        
-                        // 通知Python应用高亮显示此美食点
-                        window.pywebview.api.highlightFoodItem(id);
+                        // 创建信息窗口
+                        var infoWindow = new BMap.InfoWindow(content);
+                        marker.openInfoWindow(infoWindow);
                     }});
                     
                     // 添加到地图
@@ -188,7 +233,7 @@ class MapWidget(QWidget):
                     
                     // 添加探索范围圆
                     var radius = (viewMode === "city") ? 1000 : 10000;
-                    var circle = new BMapGL.Circle(point, radius, {{
+                    var circle = new BMap.Circle(point, radius, {{
                         strokeColor: color,
                         strokeWeight: 1,
                         strokeOpacity: 0.5,
@@ -223,7 +268,7 @@ class MapWidget(QWidget):
                 
                 // 设置城市
                 function setCity(cityName) {{
-                    var myGeo = new BMapGL.Geocoder();
+                    var myGeo = new BMap.Geocoder();
                     myGeo.getPoint(cityName, function(point) {{
                         if (point) {{
                             map.centerAndZoom(point, viewMode === "country" ? 5 : 12);
@@ -242,7 +287,28 @@ class MapWidget(QWidget):
                 
                 // 高亮显示标记
                 function highlightMarker(id) {{
-                    // 实现高亮逻辑
+                    // 查找对应的标记
+                    for (var i = 0; i < markers.length; i++) {{
+                        if (markers[i].foodData && markers[i].foodData.id == id) {{
+                            // 简单地将地图中心移动到标记位置
+                            var point = markers[i].getPosition();
+                            map.panTo(point);
+                            break;
+                        }}
+                    }}
+                }}
+                
+                // 通过ID显示信息窗口
+                function showInfoWindowById(id) {{
+                    for (var i = 0; i < markers.length; i++) {{
+                        if (markers[i].foodData && markers[i].foodData.id == id) {{
+                            // 模拟点击事件
+                            var e = document.createEvent('MouseEvents');
+                            e.initEvent('click', true, true);
+                            markers[i].dispatchEvent(e);
+                            break;
+                        }}
+                    }}
                 }}
                 
                 // 页面加载完成后初始化地图
@@ -260,6 +326,7 @@ class MapWidget(QWidget):
         self.web_view.load(QUrl.fromLocalFile(html_file_path))
     
     def set_view_mode(self, mode):
+        """设置视图模式"""
         self.view_mode = mode
         # 调用JavaScript函数更新视图模式
         self.web_view.page().runJavaScript(f"setViewMode('{mode}');")
@@ -268,6 +335,7 @@ class MapWidget(QWidget):
         self.refresh_map()
     
     def on_city_changed(self, city_name):
+        """城市改变时调用"""
         self.current_city = city_name
         # 调用JavaScript函数更新城市
         self.web_view.page().runJavaScript(f"setCity('{city_name}');")
@@ -277,56 +345,43 @@ class MapWidget(QWidget):
             self.refresh_map()
     
     def plot_food_locations(self, food_items):
-        # 检查地图是否已经加载
-        check_js = """
-        if (typeof map !== 'undefined' && typeof addFoodMarker === 'function' && typeof clearMarkers === 'function') {
-            clearMarkers();
-            true;
-        } else {
-            false;
-        }
-        """
+        """在地图上绘制美食位置"""
+        # 清除现有标记
+        self.web_view.page().runJavaScript("clearMarkers();")
         
-        def on_check_result(result):
-            if result:
-                # 添加新标记
-                for item in food_items:
-                    # 如果是城市视图且不是当前城市，则跳过
-                    if self.view_mode == "city" and item['city'] != self.current_city:
-                        continue
-                        
-                    # 添加标记，传递更多信息以便显示在悬浮卡片上
-                    reason = item.get('reason', '')
-                    # 处理字符串中的引号，避免JavaScript错误
-                    reason = reason.replace('"', '\\"').replace("'", "\\'")
-                    name = item['name'].replace('"', '\\"').replace("'", "\\'")
-                    address = item.get('address', '未知').replace('"', '\\"').replace("'", "\\'")
-                    city = item.get('city', '未知').replace('"', '\\"').replace("'", "\\'")
-                    
-                    js_code = f"""addFoodMarker(
-                        {item['longitude']}, 
-                        {item['latitude']}, 
-                        "{name}", 
-                        {item['rating']}, 
-                        {item['id']},
-                        "{address}",
-                        "{reason}",
-                        "{city}",
-                        "{item['food_type']}"
-                    );"""
-                    self.web_view.page().runJavaScript(js_code)
-            else:
-                # 如果地图还没准备好，延迟200ms再试
-                QTimer.singleShot(200, lambda: self.plot_food_locations(food_items))
-        
-        self.web_view.page().runJavaScript(check_js, on_check_result)
+        # 添加新标记
+        for item in food_items:
+            # 如果是城市视图且不是当前城市，则跳过
+            if self.view_mode == "city" and item['city'] != self.current_city:
+                continue
+                
+            # 添加标记，传递更多信息以便显示在悬浮卡片上
+            reason = item.get('reason', '')
+            # 处理字符串中的引号，避免JavaScript错误
+            reason = reason.replace('"', '\\"').replace("'", "\\'")
+            name = item['name'].replace('"', '\\"').replace("'", "\\'")
+            address = item.get('address', '未知').replace('"', '\\"').replace("'", "\\'")
+            city = item.get('city', '未知').replace('"', '\\"').replace("'", "\\'")
+            
+            js_code = f"""addFoodMarker(
+                {item['longitude']}, 
+                {item['latitude']}, 
+                "{name}", 
+                {item['rating']}, 
+                {item['id']},
+                "{address}",
+                "{reason}",
+                "{city}",
+                "{item.get('food_type', '其他')}"
+            );"""
+            self.web_view.page().runJavaScript(js_code)
     
     def highlight_food_location(self, food_item):
-        # 高亮显示选中的美食点
+        """高亮显示选中的美食点"""
         self.web_view.page().runJavaScript(f"highlightMarker({food_item['id']});")
     
     def refresh_map(self):
-        # 重新加载所有美食点
+        """刷新地图标记"""
         from data.food_manager import FoodManager
         food_manager = FoodManager()
         food_items = food_manager.get_all_food_items()
@@ -419,4 +474,9 @@ class MapWidget(QWidget):
                 self.city_combo.addItems(cities)
         
         except Exception as e:
-            print(f"Error loading cities: {e}") 
+            print(f"Error loading cities: {e}")
+
+    def show_food_info_window(self, food_id):
+        """在地图上显示指定食物的信息窗口"""
+        js_code = f"showInfoWindowById({food_id});"
+        self.web_view.page().runJavaScript(js_code) 

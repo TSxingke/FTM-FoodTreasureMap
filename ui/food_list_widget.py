@@ -9,6 +9,7 @@ class FoodListWidget(QWidget):
     food_selected = pyqtSignal(dict)
     food_edit_requested = pyqtSignal(int)
     food_delete_requested = pyqtSignal(int)
+    foodItemDoubleClicked = pyqtSignal(dict)
     
     def __init__(self):
         super().__init__()
@@ -60,6 +61,9 @@ class FoodListWidget(QWidget):
         # 设置右键菜单
         self.list_widget.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_widget.customContextMenuRequested.connect(self.show_context_menu)
+        
+        # 为列表小部件添加双击事件
+        self.list_widget.itemDoubleClicked.connect(self.on_item_double_clicked)
         
         layout.addWidget(self.list_widget)
         
@@ -176,4 +180,12 @@ class FoodListWidget(QWidget):
         
         finally:
             if conn:
-                conn.close() 
+                conn.close()
+    
+    # 添加双击事件处理函数
+    def on_item_double_clicked(self, item):
+        # 获取点击项对应的美食数据
+        food_item = item.data(Qt.UserRole)
+        if food_item:
+            # 发出信号，传递美食项数据
+            self.foodItemDoubleClicked.emit(food_item) 

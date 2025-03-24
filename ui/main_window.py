@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QMainWindow, QSplitter, QAction, QFileDialog, 
                             QMessageBox, QVBoxLayout, QWidget, QActionGroup, QHBoxLayout, QComboBox, QPushButton, QInputDialog, QLabel, QDialog)
 from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QColor, QPalette
 import json
 import datetime
 import os
@@ -21,6 +21,10 @@ class MainWindow(QMainWindow):
         
         self.setWindowTitle("美食地图")
         self.setMinimumSize(1200, 800)
+        self.setWindowIcon(QIcon("icons/FTM.png"))
+        
+        # 应用样式表
+        self.apply_stylesheet()
         
         # 创建主布局
         self.setup_ui()
@@ -30,25 +34,138 @@ class MainWindow(QMainWindow):
         
         # 加载数据
         self.load_food_data()
+        
+        # 连接食物列表的双击信号
+        self.food_list_widget.foodItemDoubleClicked.connect(self.on_food_item_double_clicked)
+    
+    def apply_stylesheet(self):
+        """应用全局样式表"""
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #f8f9fa;
+            }
+            QSplitter {
+                background-color: #f8f9fa;
+            }
+            QMenuBar {
+                background-color: #ff7043;
+                color: white;
+                font-weight: bold;
+                padding: 4px;
+            }
+            QMenuBar::item:selected {
+                background-color: #ff5722;
+            }
+            QMenu {
+                background-color: #ffffff;
+                border: 1px solid #e0e0e0;
+                padding: 5px;
+            }
+            QMenu::item:selected {
+                background-color: #ff7043;
+                color: white;
+            }
+            QToolBar {
+                background-color: #ffffff;
+                border-bottom: 1px solid #e0e0e0;
+                spacing: 10px;
+                padding: 5px;
+            }
+            QPushButton {
+                background-color: #ff7043;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #ff5722;
+            }
+            QPushButton:pressed {
+                background-color: #f4511e;
+            }
+            QComboBox {
+                border: 1px solid #e0e0e0;
+                border-radius: 4px;
+                padding: 5px;
+                background-color: white;
+            }
+            QComboBox:hover {
+                border: 1px solid #ff7043;
+            }
+            QComboBox::drop-down {
+                subcontrol-origin: padding;
+                subcontrol-position: top right;
+                width: 20px;
+                border-left: none;
+            }
+            QLabel {
+                color: #424242;
+                font-weight: bold;
+            }
+        """)
     
     def setup_ui(self):
         # 创建主分割器
         main_splitter = QSplitter(Qt.Horizontal)
         main_splitter.setChildrenCollapsible(False)
         
+        # 创建左侧容器
+        left_container = QWidget()
+        left_layout = QVBoxLayout(left_container)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(10)
+        
+        # 添加左侧标题
+        list_title = QLabel("我的美食记录")
+        list_title.setStyleSheet("font-size: 16px; color: #ff5722; margin-bottom: 5px;")
+        left_layout.addWidget(list_title)
+        
         # 创建左侧美食列表，连接信号
         self.food_list_widget = FoodListWidget()
+        self.food_list_widget.setStyleSheet("""
+            QListWidget {
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+                background-color: white;
+                padding: 5px;
+            }
+            QListWidget::item {
+                border-bottom: 1px solid #f0f0f0;
+                padding: 8px 4px;
+            }
+            QListWidget::item:selected {
+                background-color: #ffebee;
+                color: #d32f2f;
+                border-left: 3px solid #ff5722;
+            }
+            QListWidget::item:hover {
+                background-color: #fff8e1;
+            }
+        """)
         self.food_list_widget.food_selected.connect(self.show_food_detail_dialog)
         self.food_list_widget.food_edit_requested.connect(self.edit_food_item)
         self.food_list_widget.food_delete_requested.connect(self.delete_food_item)
-        main_splitter.addWidget(self.food_list_widget)
+        left_layout.addWidget(self.food_list_widget)
         
-        # 直接将地图组件添加到右侧，不再使用垂直分割器
+        # 添加左侧容器到分割器
+        main_splitter.addWidget(left_container)
+        
+        # 创建右侧容器 - 直接添加地图组件
         self.map_widget = MapWidget()
+        self.map_widget.setStyleSheet("""
+            QWebEngineView {
+                border: 1px solid #e0e0e0;
+                border-radius: 6px;
+            }
+        """)
+        
+        # 添加到分割器
         main_splitter.addWidget(self.map_widget)
         
         # 设置主分割器的初始大小
-        main_splitter.setSizes([200, 600])
+        main_splitter.setSizes([250, 950])  # 给地图分配更多空间
         
         # 将主分割器设置为中央控件
         self.setCentralWidget(main_splitter)
@@ -95,26 +212,25 @@ class MainWindow(QMainWindow):
         # 视图菜单
         view_menu = menu_bar.addMenu("视图")
         
+        # 视图切换动作组
+        view_action_group = QActionGroup(self)
+        
         # 全国视图
         country_view_action = QAction("全国视图", self)
         country_view_action.setCheckable(True)
         country_view_action.triggered.connect(lambda: self.map_widget.set_view_mode("country"))
+        view_action_group.addAction(country_view_action)
         view_menu.addAction(country_view_action)
         
         # 城市视图
         city_view_action = QAction("城市视图", self)
         city_view_action.setCheckable(True)
         city_view_action.triggered.connect(lambda: self.map_widget.set_view_mode("city"))
+        view_action_group.addAction(city_view_action)
         view_menu.addAction(city_view_action)
         
         # 设置默认选中
         country_view_action.setChecked(True)
-        
-        # 创建视图操作组
-        view_group = QActionGroup(self)
-        view_group.addAction(country_view_action)
-        view_group.addAction(city_view_action)
-        view_group.setExclusive(True)
     
     def load_food_data(self):
         """从数据库加载美食数据，基于当前选择的集合"""
@@ -276,28 +392,38 @@ class MainWindow(QMainWindow):
         """添加地图集合选择器"""
         collections_widget = QWidget()
         collections_layout = QHBoxLayout(collections_widget)
-        collections_layout.setContentsMargins(0, 0, 0, 0)
+        collections_layout.setContentsMargins(10, 5, 10, 5)
+        collections_layout.setSpacing(10)
         
         # 添加标签
-        collections_layout.addWidget(QLabel("当前地图:"))
+        label = QLabel("当前地图:")
+        label.setStyleSheet("font-weight: bold; color: #424242;")
+        collections_layout.addWidget(label)
         
         # 添加下拉菜单
         self.collection_combo = QComboBox()
+        self.collection_combo.setMinimumWidth(200)
         self.collection_combo.currentIndexChanged.connect(self.on_collection_changed)
         collections_layout.addWidget(self.collection_combo)
         
         # 添加创建按钮
-        new_collection_btn = QPushButton("新建地图")
-        new_collection_btn.clicked.connect(self.create_new_collection)
+        new_collection_btn = QPushButton("新建")
+        new_collection_btn.setIcon(QIcon("icons/add.png"))
         collections_layout.addWidget(new_collection_btn)
+        new_collection_btn.clicked.connect(self.create_new_collection)
         
         # 添加删除按钮
-        delete_collection_btn = QPushButton("删除地图")
+        delete_collection_btn = QPushButton("删除")
+        delete_collection_btn.setIcon(QIcon("icons/delete.png"))
         delete_collection_btn.clicked.connect(self.delete_collection)
         collections_layout.addWidget(delete_collection_btn)
         
+        # 添加弹性空间
+        collections_layout.addStretch(1)
+        
         # 添加到主工具栏
         self.toolbar = self.addToolBar("地图集合")
+        self.toolbar.setMovable(False)
         self.toolbar.addWidget(collections_widget)
         
         # 加载地图集合
@@ -420,4 +546,20 @@ class MainWindow(QMainWindow):
             
             finally:
                 if conn:
-                    conn.close() 
+                    conn.close()
+
+    def on_food_item_double_clicked(self, food_item):
+        """
+        处理美食列表项被双击的事件
+        
+        Args:
+            food_item: 被双击的美食数据项
+        """
+        # 获取美食点ID
+        food_id = food_item['id']
+        
+        # 调用地图widget的方法显示信息窗口
+        self.map_widget.show_food_info_window(food_id)
+        
+        # 同时高亮显示该美食点
+        self.map_widget.highlight_food_location(food_item) 
