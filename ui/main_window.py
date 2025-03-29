@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (QMainWindow, QSplitter, QAction, QFileDialog, 
-                            QMessageBox, QVBoxLayout, QWidget, QActionGroup, QHBoxLayout, QComboBox, QPushButton, QInputDialog, QLabel, QDialog, QStatusBar, QSizePolicy)
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QIcon, QFont
+                            QMessageBox, QVBoxLayout, QWidget, QActionGroup, QHBoxLayout, QComboBox, QPushButton, QInputDialog, QLabel, QDialog, QStatusBar, QSizePolicy, QToolBar)
+from PyQt5.QtCore import Qt, QSize, QUrl
+from PyQt5.QtGui import QIcon, QFont, QDesktopServices
 import json
 import datetime
 import os
@@ -60,6 +60,7 @@ class MainWindow(QMainWindow):
             color: white;
             border: none;
             padding: 4px;
+            font-weight: bold;
         }
         
         QMenuBar::item {
@@ -107,11 +108,37 @@ class MainWindow(QMainWindow):
             background-color: #1c6ea4;
         }
         
+        QToolBar {
+            background-color: #ffffff;
+            border-bottom: 1px solid #e6e6e6;
+            spacing: 5px;
+            padding: 5px;
+        }
+        
+        QToolBar QToolButton {
+            background-color: transparent;
+            color: #333;
+            border-radius: 4px;
+            padding: 4px;
+            margin: 1px;
+        }
+        
+        QToolBar QToolButton:hover {
+            background-color: #e1f0fa;
+        }
+        
+        QToolBar QToolButton:checked,
+        QToolBar QToolButton:pressed {
+            background-color: #d0e8f5;
+            color: #2980b9;
+        }
+        
         QComboBox {
             border: 1px solid #dcdde1;
             border-radius: 4px;
             padding: 5px;
             background-color: white;
+            min-height: 25px;
         }
         
         QComboBox::drop-down {
@@ -131,10 +158,27 @@ class MainWindow(QMainWindow):
             selection-color: white;
         }
         
+        QLineEdit {
+            border: 1px solid #dcdde1;
+            border-radius: 4px;
+            padding: 5px;
+            background-color: white;
+            selection-background-color: #3498db;
+        }
+        
+        QLabel {
+            color: #2c3e50;
+        }
+        
         QStatusBar {
             background-color: #f8f9fa;
             color: #333;
             border-top: 1px solid #dcdde1;
+        }
+        
+        QStatusBar QLabel {
+            margin: 2px 5px;
+            color: #555;
         }
         
         QSplitter::handle {
@@ -148,6 +192,48 @@ class MainWindow(QMainWindow):
         QSplitter::handle:vertical {
             height: 2px;
         }
+        
+        QListWidget {
+            background-color: white;
+            border: 1px solid #e6e6e6;
+            border-radius: 4px;
+            alternate-background-color: #f5f7fa;
+            padding: 2px;
+        }
+        
+        QListWidget::item {
+            padding: 6px;
+            border-bottom: 1px solid #efefef;
+        }
+        
+        QListWidget::item:selected {
+            background-color: #e1f0fa;
+            color: #2c3e50;
+            border-left: 3px solid #3498db;
+        }
+        
+        QListWidget::item:hover {
+            background-color: #f0f0f0;
+        }
+        
+        QDialog {
+            background-color: #f5f7fa;
+        }
+        
+        QGroupBox {
+            font-weight: bold;
+            border: 1px solid #dcdde1;
+            border-radius: 4px;
+            margin-top: 1.5ex;
+            padding-top: 0.8ex;
+        }
+        
+        QGroupBox::title {
+            subcontrol-origin: margin;
+            subcontrol-position: top left;
+            padding: 0 3px;
+            color: #3498db;
+        }
         """
         self.setStyleSheet(style)
     
@@ -155,20 +241,51 @@ class MainWindow(QMainWindow):
         # 创建主分割器
         main_splitter = QSplitter(Qt.Horizontal)
         main_splitter.setChildrenCollapsible(False)
+        main_splitter.setHandleWidth(3)  # 稍微增加分割线宽度
+        main_splitter.setStyleSheet("""
+        QSplitter::handle {
+            background-color: #d0d0d0;
+            border-radius: 1px;
+        }
+        QSplitter::handle:hover {
+            background-color: #3498db;
+        }
+        """)
         
         # 创建左侧美食列表，连接信号
         self.food_list_widget = FoodListWidget()
         self.food_list_widget.food_selected.connect(self.show_food_detail_dialog)
         self.food_list_widget.food_edit_requested.connect(self.edit_food_item)
         self.food_list_widget.food_delete_requested.connect(self.delete_food_item)
-        main_splitter.addWidget(self.food_list_widget)
         
-        # 直接将地图组件添加到右侧，不再使用垂直分割器
+        # 创建左侧面板容器
+        left_panel = QWidget()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setSpacing(10)
+        
+        # 添加标题
+        list_title = QLabel("美食列表")
+        list_title.setStyleSheet("""
+        font-size: 16px;
+        font-weight: bold;
+        color: #2c3e50;
+        margin-bottom: 5px;
+        """)
+        left_layout.addWidget(list_title)
+        
+        # 添加美食列表
+        left_layout.addWidget(self.food_list_widget)
+        
+        # 添加左侧面板到分割器
+        main_splitter.addWidget(left_panel)
+        
+        # 直接将地图组件添加到右侧
         self.map_widget = MapWidget()
         main_splitter.addWidget(self.map_widget)
         
-        # 设置主分割器的初始大小
-        main_splitter.setSizes([200, 600])
+        # 设置主分割器的初始大小 (30%/70% 分割)
+        main_splitter.setSizes([300, 700])
         
         # 将主分割器设置为中央控件
         self.setCentralWidget(main_splitter)
@@ -218,34 +335,55 @@ class MainWindow(QMainWindow):
     
     def create_toolbar(self):
         """创建工具栏"""
-        toolbar = self.addToolBar("主工具栏")
-        toolbar.setMovable(False)
-        toolbar.setIconSize(QSize(24, 24))
-        toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        self.toolbar = QToolBar("主工具栏")
+        self.toolbar.setIconSize(QSize(24, 24))
+        self.toolbar.setMovable(False)
+        self.addToolBar(self.toolbar)
+        
+        # 添加导出博客按钮
+        self.export_blog_action = QAction(QIcon("icons/blog_export.png"), "导出博客", self)
+        self.export_blog_action.setStatusTip("将当前美食地图导出为博客页面")
+        self.export_blog_action.triggered.connect(self.export_blog)
+        self.toolbar.addAction(self.export_blog_action)
         
         # 添加食物按钮
         add_action = QAction(QIcon("icons/add.png"), "添加美食", self)
+        add_action.setToolTip("添加新的美食记录")
         add_action.triggered.connect(self.show_add_food_dialog)
-        toolbar.addAction(add_action)
+        self.toolbar.addAction(add_action)
         
-        # 移除导入导出按钮，保留在菜单中
         # 添加弹性空间，将后续内容推到右侧
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        toolbar.addWidget(spacer)
+        self.toolbar.addWidget(spacer)
         
         # 创建视图模式切换按钮
-        self.create_view_mode_buttons(toolbar)
+        self.create_view_mode_buttons(self.toolbar)
     
     def create_status_bar(self):
         """创建底部状态栏"""
         status_bar = self.statusBar()
+        status_bar.setStyleSheet("""
+        QStatusBar {
+            background-color: #f8f9fa;
+            color: #333;
+            border-top: 1px solid #dcdde1;
+            min-height: 25px;
+        }
+        QStatusBar QLabel {
+            padding: 0 10px;
+        }
+        """)
         
         # 设置默认状态信息
         status_bar.showMessage("美食地图应用已准备就绪")
         
         # 添加数据集信息标签
         self.dataset_label = QLabel()
+        self.dataset_label.setStyleSheet("""
+        font-weight: bold;
+        color: #3498db;
+        """)
         status_bar.addPermanentWidget(self.dataset_label)
         
         # 初始化标签内容
@@ -460,28 +598,88 @@ class MainWindow(QMainWindow):
         """添加地图集合选择器"""
         collections_widget = QWidget()
         collections_layout = QHBoxLayout(collections_widget)
-        collections_layout.setContentsMargins(0, 0, 0, 0)
+        collections_layout.setContentsMargins(10, 5, 10, 5)
+        collections_layout.setSpacing(10)
         
-        # 添加标签
-        collections_layout.addWidget(QLabel("当前地图:"))
+        # 添加标签，使用特殊样式
+        map_label = QLabel("当前地图:")
+        map_label.setStyleSheet("""
+        font-weight: bold;
+        color: #2c3e50;
+        """)
+        collections_layout.addWidget(map_label)
         
         # 添加下拉菜单
         self.collection_combo = QComboBox()
+        self.collection_combo.setMinimumWidth(200)
+        self.collection_combo.setStyleSheet("""
+        QComboBox {
+            border: 1px solid #dcdde1;
+            border-radius: 4px;
+            padding: 5px;
+            background-color: white;
+            selection-background-color: #3498db;
+            selection-color: white;
+        }
+        QComboBox::drop-down {
+            subcontrol-origin: padding;
+            subcontrol-position: top right;
+            width: 20px;
+            border-left: 1px solid #dcdde1;
+        }
+        QComboBox::down-arrow {
+            image: url(icons/dropdown.png);
+            width: 12px;
+            height: 12px;
+        }
+        """)
         self.collection_combo.currentIndexChanged.connect(self.on_collection_changed)
         collections_layout.addWidget(self.collection_combo)
         
         # 添加创建按钮
-        new_collection_btn = QPushButton("新建")
+        new_collection_btn = QPushButton("新建地图")
+        new_collection_btn.setIcon(QIcon("icons/new_map.png"))
+        new_collection_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #2ecc71;
+            padding: 6px 12px;
+        }
+        QPushButton:hover {
+            background-color: #27ae60;
+        }
+        """)
         new_collection_btn.clicked.connect(self.create_new_collection)
         collections_layout.addWidget(new_collection_btn)
         
         # 添加删除按钮
-        delete_collection_btn = QPushButton("删除")
+        delete_collection_btn = QPushButton("删除地图")
+        delete_collection_btn.setIcon(QIcon("icons/delete_map.png"))
+        delete_collection_btn.setStyleSheet("""
+        QPushButton {
+            background-color: #e74c3c;
+            padding: 6px 12px;
+        }
+        QPushButton:hover {
+            background-color: #c0392b;
+        }
+        """)
         delete_collection_btn.clicked.connect(self.delete_collection)
         collections_layout.addWidget(delete_collection_btn)
         
+        # 添加弹性空间，将控件固定在左侧
+        collections_layout.addStretch()
+        
         # 添加到主工具栏
         self.toolbar = self.addToolBar("地图集合")
+        self.toolbar.setMovable(False)
+        self.toolbar.setStyleSheet("""
+        QToolBar {
+            background-color: #ecf0f1;
+            border-bottom: 1px solid #bdc3c7;
+            spacing: 5px;
+            padding: 3px;
+        }
+        """)
         self.toolbar.addWidget(collections_widget)
         
         # 加载地图集合
@@ -624,26 +822,68 @@ class MainWindow(QMainWindow):
 
     def create_view_mode_buttons(self, toolbar):
         """创建视图模式切换按钮，添加到工具栏的右侧"""
+        # 创建一个容器，使两个按钮看起来像一个分段控件
+        view_mode_widget = QWidget()
+        view_mode_layout = QHBoxLayout(view_mode_widget)
+        view_mode_layout.setContentsMargins(0, 0, 10, 0)  # 右侧边距确保不贴着窗口边缘
+        view_mode_layout.setSpacing(0)
+        
         # 创建单选按钮组
         self.view_mode_group = QActionGroup(self)
         self.view_mode_group.setExclusive(True)
         
-        # 创建全国视图按钮 - 不使用图标
-        self.country_view_action = QAction("全国视图", self)
-        self.country_view_action.setCheckable(True)
-        self.country_view_action.setChecked(True)  # 默认选中全国视图
-        self.country_view_action.triggered.connect(lambda: self.change_view_mode("country"))
-        self.view_mode_group.addAction(self.country_view_action)
+        # 创建全国视图按钮
+        self.country_view_btn = QPushButton("全国视图")
+        self.country_view_btn.setCheckable(True)
+        self.country_view_btn.setChecked(True)  # 默认选中全国视图
+        self.country_view_btn.clicked.connect(lambda: self.change_view_mode("country"))
+        self.country_view_btn.setStyleSheet("""
+        QPushButton {
+            border: 1px solid #3498db;
+            border-right: none;
+            border-top-left-radius: 4px;
+            border-bottom-left-radius: 4px;
+            padding: 5px 10px;
+            background-color: #fff;
+            color: #3498db;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: #ecf0f1;
+        }
+        QPushButton:checked {
+            background-color: #3498db;
+            color: white;
+        }
+        """)
+        view_mode_layout.addWidget(self.country_view_btn)
         
-        # 创建城市视图按钮 - 不使用图标
-        self.city_view_action = QAction("城市视图", self)
-        self.city_view_action.setCheckable(True)
-        self.city_view_action.triggered.connect(lambda: self.change_view_mode("city"))
-        self.view_mode_group.addAction(self.city_view_action)
+        # 创建城市视图按钮
+        self.city_view_btn = QPushButton("城市视图")
+        self.city_view_btn.setCheckable(True)
+        self.city_view_btn.clicked.connect(lambda: self.change_view_mode("city"))
+        self.city_view_btn.setStyleSheet("""
+        QPushButton {
+            border: 1px solid #3498db;
+            border-top-right-radius: 4px;
+            border-bottom-right-radius: 4px;
+            padding: 5px 10px;
+            background-color: #fff;
+            color: #3498db;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: #ecf0f1;
+        }
+        QPushButton:checked {
+            background-color: #3498db;
+            color: white;
+        }
+        """)
+        view_mode_layout.addWidget(self.city_view_btn)
         
-        # 添加视图模式按钮到工具栏
-        toolbar.addAction(self.country_view_action)
-        toolbar.addAction(self.city_view_action)
+        # 添加到工具栏
+        toolbar.addWidget(view_mode_widget)
         
         # 初始化视图模式
         self.current_view_mode = "country"
@@ -653,9 +893,54 @@ class MainWindow(QMainWindow):
         if mode != self.current_view_mode:
             self.current_view_mode = mode
             
+            # 更新按钮状态
+            self.country_view_btn.setChecked(mode == "country")
+            self.city_view_btn.setChecked(mode == "city")
+            
             # 调用地图窗口的方法切换视图
             self.map_widget.set_view_mode(mode)
             
             # 更新状态栏信息
             status_message = "已切换到城市视图" if mode == "city" else "已切换到全国视图"
-            self.statusBar().showMessage(status_message, 3000) 
+            self.statusBar().showMessage(status_message, 3000)
+
+    def export_blog(self):
+        """导出当前地图集合为博客页面"""
+        if not hasattr(self, 'current_collection_id') or not self.current_collection_id:
+            QMessageBox.warning(self, "错误", "请先选择一个地图集合")
+            return
+        
+        # 获取当前集合名称
+        collection_name = "美食地图"
+        for i in range(self.collection_combo.count()):
+            if self.collection_combo.itemData(i) == self.current_collection_id:
+                collection_name = self.collection_combo.itemText(i).split(" (")[0]  # 移除可能的"(个人)"后缀
+                break
+        
+        # 构建默认文件名
+        default_filename = f"{collection_name}_{datetime.date.today().strftime('%Y%m%d')}.html"
+        
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出博客", default_filename, "HTML文件 (*.html)"
+        )
+        
+        if file_path:
+            success = self.food_manager.export_blog(self.current_collection_id, file_path)
+            
+            if success:
+                QMessageBox.information(self, "成功", f"博客已成功导出到 {file_path}")
+                
+                # 询问是否立即查看博客
+                reply = QMessageBox.question(
+                    self, 
+                    "查看博客", 
+                    "博客已成功导出，是否立即在浏览器中查看？",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    # 使用系统默认浏览器打开HTML文件
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(file_path))
+            else:
+                QMessageBox.warning(self, "错误", "导出博客失败，请重试。") 

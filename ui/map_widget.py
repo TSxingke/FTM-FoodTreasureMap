@@ -189,10 +189,10 @@ class MapWidget(QWidget):
                     // 添加探索范围圆
                     var radius = (viewMode === "city") ? 1000 : 10000;
                     var circle = new BMapGL.Circle(point, radius, {{
-                        strokeColor: color,
+                        strokeColor: "#FF8C00",
                         strokeWeight: 1,
                         strokeOpacity: 0.5,
-                        fillColor: color,
+                        fillColor: "#FF8C00",
                         fillOpacity: 0.2
                     }});
                     
